@@ -18,6 +18,7 @@ const state = {
   modalVoice: null,     // data URI 或 null
   modalItems: {},       // 復健表單勾選：{"1": 次數或 null}
   modalPeriod: "上午",  // 復健表單時段
+  exInfoEx: null,       // 目前示範彈窗顯示的動作（語音朗讀用）
 };
 
 /* ----------------------------- 復健動作資料 --------------------------------------------
@@ -635,10 +636,12 @@ function setPeriodSeg(p) {
   $$("#rPeriod button").forEach((b) => b.classList.toggle("is-active", b.dataset.period === p));
 }
 
-/* 動作示範彈窗（GIF + 做法 + 好處） */
+/* 動作示範彈窗（GIF + 做法 + 好處 + 語音朗讀） */
 function openExInfo(n) {
   const e = EX_BY_N[String(n)];
   if (!e) return;
+  stopSpeak();
+  state.exInfoEx = e;
   $("#exInfoTitle").textContent = `${e.n}. ${e.name}`;
   const gif = e.gif ? `<img class="ex-gif" src="${gifUrl(e.gif)}" alt="${esc(e.name)} 示範動畫" loading="lazy">` : "";
   const note = e.note ? `<div class="ex-note">🪑 ${esc(e.note)}</div>` : "";
@@ -647,12 +650,53 @@ function openExInfo(n) {
     ${gif}${note}
     <div class="ex-sec"><h4>怎麼做</h4><p>${esc(e.how)}</p></div>
     <div class="ex-good">好處：${esc(e.good)}</div>`;
+  const sb = $("#exSpeakBtn");
+  if (sb) sb.style.display = speakSupported() ? "" : "none";
   $("#exInfoModal").hidden = false;
   document.body.style.overflow = "hidden";
 }
 function closeExInfo() {
+  stopSpeak();
   $("#exInfoModal").hidden = true;
   if ($("#rehabModal").hidden) document.body.style.overflow = "";  // 若復健表單仍開著，維持鎖定
+}
+
+/* ----------------------------- 語音朗讀（用裝置內建 TTS，免檔案） ----------------------------- */
+function speakSupported() {
+  return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+function pickZhVoice() {
+  const vs = window.speechSynthesis.getVoices() || [];
+  return vs.find((v) => /zh[-_]?(TW|Hant|HK)/i.test(v.lang)) ||
+         vs.find((v) => /^zh/i.test(v.lang)) || null;
+}
+function stopSpeak() {
+  if (speakSupported()) window.speechSynthesis.cancel();
+  const b = $("#exSpeakBtn");
+  if (b) { b.classList.remove("is-speaking"); b.textContent = "🔊 唸給我聽"; }
+}
+function exSpeechText(e) {
+  let t = e.name + "。";
+  if (e.note) t += e.note + " ";
+  t += "怎麼做。" + e.how + " 好處。" + e.good;
+  return t;
+}
+function toggleSpeak() {
+  if (!speakSupported()) { toast("這個裝置不支援語音朗讀"); return; }
+  const b = $("#exSpeakBtn");
+  if (b && b.classList.contains("is-speaking")) { stopSpeak(); return; }
+  window.speechSynthesis.cancel();
+  const e = state.exInfoEx;
+  if (!e) return;
+  const u = new SpeechSynthesisUtterance(exSpeechText(e));
+  u.lang = "zh-TW";
+  u.rate = 0.85;  // 放慢一點，長輩比較聽得清楚
+  const v = pickZhVoice();
+  if (v) u.voice = v;
+  u.onend = stopSpeak;
+  u.onerror = stopSpeak;
+  if (b) { b.classList.add("is-speaking"); b.textContent = "⏸ 停止"; }
+  window.speechSynthesis.speak(u);
 }
 
 function updateHeaderName() {
@@ -937,6 +981,7 @@ function bindEvents() {
     closeModal("rehabModal"); closeModal("vitalsModal");
   }));
   $$("[data-close-ex]").forEach((b) => b.addEventListener("click", closeExInfo));
+  $("#exSpeakBtn").addEventListener("click", toggleSpeak);
 
   // 復健表單：時段選擇
   $("#rPeriod").addEventListener("click", (e) => {
