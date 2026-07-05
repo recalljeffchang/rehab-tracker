@@ -82,26 +82,14 @@
         <span>開始日期</span>
         <input type="date" id="pStart">
       </label>
+      <button class="qbtn qbtn--green full" id="saveProfile">儲存</button>
+      <div class="save-hint" id="profileSaved" hidden>✔ 已儲存</div>
     </div>
 
-    <h2 class="section-title">每日目標 <small>（請醫師或家人幫忙填寫）</small></h2>
+    <h2 class="section-title">復健動作說明</h2>
     <div class="card">
-      <div class="goal-row">
-        <span class="goal-row__label">抬腿</span>
-        <span>每次</span><input type="number" min="0" id="gLegReps" class="mini"><span>下，</span>
-        <span>一天</span><input type="number" min="0" id="gLegTimes" class="mini"><span>次</span>
-      </div>
-      <div class="goal-row">
-        <span class="goal-row__label">站立</span>
-        <span>每次</span><input type="number" min="0" id="gStandReps" class="mini"><span>下，</span>
-        <span>一天</span><input type="number" min="0" id="gStandTimes" class="mini"><span>次</span>
-      </div>
-      <div class="goal-row">
-        <span class="goal-row__label">行走</span>
-        <span>每天</span><input type="number" min="0" id="gWalkLaps" class="mini"><span>圈</span>
-      </div>
-      <button class="qbtn qbtn--green full" id="saveProfile">儲存基本資料與目標</button>
-      <div class="save-hint" id="profileSaved" hidden>✔ 已儲存</div>
+      <p class="muted">共 11 個動作，點任一個看示範動畫與做法。</p>
+      <div id="exerciseGuide" class="ex-guide"></div>
     </div>
 
     <h2 class="section-title">備份與匯出</h2>
@@ -147,11 +135,16 @@
         <label class="field"><span>日期</span><input type="date" id="rDate"></label>
         <label class="field"><span>時間</span><input type="time" id="rTime"></label>
       </div>
-      <div class="grid3">
-        <label class="field"><span>抬腿（次）</span><input type="number" min="0" inputmode="numeric" id="rLeg" placeholder="0"></label>
-        <label class="field"><span>站立（次）</span><input type="number" min="0" inputmode="numeric" id="rStand" placeholder="0"></label>
-        <label class="field"><span>行走（圈）</span><input type="number" min="0" step="0.5" inputmode="decimal" id="rWalk" placeholder="0"></label>
+      <div class="field">
+        <span>時段</span>
+        <div class="seg" id="rPeriod">
+          <button type="button" data-period="上午">上午</button>
+          <button type="button" data-period="下午">下午</button>
+          <button type="button" data-period="晚上">晚上</button>
+        </div>
       </div>
+      <div class="checklist-hint">做了哪些就點一下打勾，次數可留白；點 <b>ⓘ</b> 看示範動畫。</div>
+      <div id="rChecklist" class="checklist"></div>
       <label class="field"><span>備註 / 今天的感覺</span>
         <textarea id="rNotes" rows="2" placeholder="例：走得比昨天穩"></textarea>
       </label>
@@ -213,6 +206,22 @@
       <div class="spacer"></div>
       <button class="btn-ghost" data-close>取消</button>
       <button class="btn-primary" id="vitalsSave">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 動作示範 ===================== -->
+<div class="modal" id="exInfoModal" hidden>
+  <div class="modal__backdrop" data-close-ex></div>
+  <div class="modal__panel">
+    <div class="modal__head">
+      <span id="exInfoTitle">動作示範</span>
+      <button class="modal__x" data-close-ex aria-label="關閉">✕</button>
+    </div>
+    <div class="modal__body" id="exInfoBody"></div>
+    <div class="modal__foot">
+      <div class="spacer"></div>
+      <button class="btn-primary" data-close-ex>知道了</button>
     </div>
   </div>
 </div>

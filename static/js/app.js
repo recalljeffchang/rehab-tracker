@@ -16,7 +16,33 @@ const state = {
   editingVitals: null,
   modalPhoto: null,     // data URI 或 null
   modalVoice: null,     // data URI 或 null
+  modalItems: {},       // 復健表單勾選：{"1": 次數或 null}
+  modalPeriod: "上午",  // 復健表單時段
 };
+
+/* ----------------------------- 復健動作資料（來自「復健動作AB分解圖.pdf」） --------------- */
+const EX_CATS = { "肌力訓練": "#2f6d5f", "進階運動": "#e0912f", "關節舒緩": "#4f6d9e" };
+const EXERCISES = [
+  { n: 1, name: "腳踝幫浦運動", cat: "肌力訓練", unit: "次", how: "腳尖用力向上勾，再向下踩，像踩油門一樣，慢慢反覆做。", good: "促進血液循環、消除腫脹。" },
+  { n: 2, name: "大腿壓毛巾", cat: "肌力訓練", unit: "次", how: "膝蓋下墊捲好的毛巾。用大腿力量把膝蓋向下壓毛巾，撐 5–10 秒再放鬆。", good: "訓練大腿力量，保護膝蓋和髖關節。" },
+  { n: 3, name: "直腿抬高", cat: "肌力訓練", unit: "次", how: "開刀的腿保持打直，慢慢往上抬高約 20–30 公分，停 5 秒再慢慢放下。", good: "訓練大腿肌力，讓走路更有力。" },
+  { n: 4, name: "坐姿抬腿（踢腿）", cat: "肌力訓練", unit: "次", how: "坐滿椅子，把膝蓋慢慢打直踢平、腳尖上勾，停 5 秒再慢慢放下。", good: "加強大腿前側肌肉。" },
+  { n: 5, name: "雙手高舉＋原地踏步", cat: "進階運動", unit: "次", how: "雙手像投降一樣往上舉高，同時雙腳在原地輕輕踏步。", good: "活動肩膀與全身關節，增加心肺耐力。" },
+  { n: 6, name: "點頭抬頭", cat: "關節舒緩", unit: "次", how: "吸氣時頭慢慢往上看，吐氣時下巴慢慢往下靠近胸口。", good: "放鬆肩頸，預防頭暈。" },
+  { n: 7, name: "左右轉頭", cat: "關節舒緩", unit: "次", how: "像看後照鏡一樣，頭慢慢轉向右邊、停 3 秒，再慢慢轉向左邊。", good: "放鬆頸部，增加活動度。" },
+  { n: 8, name: "繞肩膀", cat: "關節舒緩", unit: "圈", how: "雙肩往上聳起，再往後、往下繞圈。向前 5 圈、向後 5 圈。", good: "放鬆長期推助行器而緊繃的肩膀。" },
+  { n: 9, name: "推天抓空", cat: "關節舒緩", unit: "次", how: "雙手向上舉高，同時手指用力張開，再握拳。反覆 10 次。", good: "活動手部與肩膀關節。" },
+  { n: 10, name: "腳踝繞圈", cat: "關節舒緩", unit: "圈", how: "腳稍微往前伸、腳跟點地，用大腳趾在空中畫圓圈，順逆時針各 5 圈。", good: "活動踝關節，幫助血液回流、消水腫。" },
+  { n: 11, name: "坐姿抬腿（活動膝蓋）", cat: "關節舒緩", unit: "次", how: "雙手扶椅邊，把膝蓋打直踢平、腳尖上勾，停 3 秒放下。兩腳輪流。", good: "輕鬆活動膝關節，保護髖關節。" },
+];
+const EX_BY_N = Object.fromEntries(EXERCISES.map((e) => [String(e.n), e]));
+const EX_TOTAL = EXERCISES.length;
+const PERIODS = ["上午", "下午", "晚上"];
+const gifUrl = (n) => `/static/gif/ex${pad(n)}.gif`;
+function autoPeriod() {
+  const h = new Date().getHours();
+  return h < 12 ? "上午" : (h < 18 ? "下午" : "晚上");
+}
 
 /* ----------------------------- 工具 ----------------------------- */
 function pad(n) { return String(n).padStart(2, "0"); }
@@ -121,34 +147,32 @@ async function renderToday() {
     ]);
   } catch (e) { toast(e.message); return; }
 
-  renderGoals(summary);
+  renderCompletion(summary);
   renderTimeline(rehab, vitals);
 }
 
-function goalCard(emoji, name, done, goal, unit) {
-  const hasGoal = goal && goal > 0;
-  const pct = hasGoal ? Math.min(100, Math.round((done / goal) * 100)) : 0;
-  const isDone = hasGoal && done >= goal;
-  return `
-    <div class="goal-card ${isDone ? "is-done" : ""} ${hasGoal ? "" : "no-goal"}">
+function renderCompletion(s) {
+  const total = s.total || EX_TOTAL;
+  const done = s.done || 0;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const full = total > 0 && done >= total;
+  // 三個標準時段 + 後端可能回傳的其他 bucket（例如舊資料的「其他」），確保小計加得起來。
+  const byp = s.by_period || {};
+  const extra = Object.keys(byp).filter((k) => !PERIODS.includes(k));
+  const chips = [...PERIODS, ...extra].map((p) => {
+    const v = byp[p] || 0;
+    return `<span class="pchip${v > 0 ? " on" : ""}">${esc(p)} ${v}/${total}</span>`;
+  }).join("");
+  $("#goals").innerHTML = `
+    <div class="goal-card ${full ? "is-done" : ""}">
       <div class="goal-card__top">
-        <div class="goal-card__name"><span class="emoji">${emoji}</span>${name}
-          ${isDone ? '<span class="goal-card__done-tag">達標 🎉</span>' : ""}</div>
-        <div class="goal-card__val">
-          <b>${fmtNum(done) ?? 0}</b>${hasGoal ? `<span class="goal"> / ${fmtNum(goal)}</span>` : ""}<span class="unit">${unit}</span>
-        </div>
+        <div class="goal-card__name"><span class="emoji">🦵</span>今日復健完成度
+          ${full ? '<span class="goal-card__done-tag">全部完成 🎉</span>' : ""}</div>
+        <div class="goal-card__val"><b>${done}</b><span class="goal"> / ${total}</span><span class="unit">項</span></div>
       </div>
-      ${hasGoal
-        ? `<div class="bar"><div class="bar__fill" style="width:${pct}%"></div></div>`
-        : `<div class="goal-card__hint">尚未設定目標（可到「設定」填寫）</div>`}
+      <div class="bar"><div class="bar__fill" style="width:${pct}%"></div></div>
+      <div class="pchips">${chips}</div>
     </div>`;
-}
-
-function renderGoals(s) {
-  $("#goals").innerHTML =
-    goalCard("🦵", "抬腿", s.leg_raise.done, s.leg_raise.goal, "下") +
-    goalCard("🧍", "站立", s.standing.done, s.standing.goal, "下") +
-    goalCard("🚶", "行走", s.walking.done, s.walking.goal, "圈");
 }
 
 function renderTimeline(rehab, vitals) {
@@ -172,19 +196,25 @@ function recCard(r) {
 }
 
 function rehabCard(r) {
-  const chips = [];
-  if (fmtNum(r.leg_raise) !== null) chips.push(`<span class="chip">🦵 抬腿 ${fmtNum(r.leg_raise)}</span>`);
-  if (fmtNum(r.standing) !== null) chips.push(`<span class="chip">🧍 站立 ${fmtNum(r.standing)}</span>`);
-  if (fmtNum(r.walking) !== null) chips.push(`<span class="chip">🚶 行走 ${fmtNum(r.walking)} 圈</span>`);
-  if (!chips.length) chips.push(`<span class="chip">復健</span>`);
+  const items = r.items || {};
+  const keys = Object.keys(items).map(Number).sort((a, b) => a - b);
+  const chips = keys.map((n) => {
+    const e = EX_BY_N[String(n)];
+    const nm = e ? e.name : "動作" + n;
+    const c = items[String(n)];
+    const cnt = (c != null && c !== "") ? ` ${fmtNum(c)}${e ? e.unit : ""}` : "";
+    return `<span class="chip">${esc(nm)}${cnt}</span>`;
+  });
+  if (!chips.length) chips.push(`<span class="chip chip--empty">未勾選動作</span>`);
   const media = [];
   if (r.photo) media.push(`<img src="${esc(r.photo)}" alt="照片">`);
   if (r.voice) media.push(`<audio controls src="${esc(r.voice)}"></audio>`);
+  const period = r.period ? `<span class="rec-period">${esc(r.period)}</span>` : "";
   return `
     <div class="rec" data-edit-rehab="${r.id}">
       <div class="rec__icon">🦵</div>
       <div class="rec__body">
-        <div class="rec__time">${esc(r.time || "")}</div>
+        <div class="rec__time">${period}${esc(r.time || "")} <span class="rec-count">完成 ${keys.length} 項</span></div>
         <div class="rec__metrics">${chips.join("")}</div>
         ${r.notes ? `<div class="rec__notes">${esc(r.notes)}</div>` : ""}
         ${media.length ? `<div class="rec__media">${media.join("")}</div>` : ""}
@@ -406,13 +436,22 @@ async function renderCharts() {
   const idx = new Map(labels.map((d, i) => [d, i]));
   const blank = () => labels.map(() => null);
 
-  // 復健：每日加總
-  const leg = blank(), stand = blank(), walk = blank();
+  // 復健：每日各時段「完成動作數」（distinct，滿分 11）
+  // 時段不是三種標準值的（例如舊資料 period=""）歸到「其他」，與後端 summary 一致，不要塞進上午。
+  const CHART_PERIODS = ["上午", "下午", "晚上", "其他"];
+  const PCOLORS = { "上午": "#2f6d5f", "下午": "#4f9d8a", "晚上": "#9cc3b8", "其他": "#bcae97" };
+  const perSeries = {}; CHART_PERIODS.forEach((p) => (perSeries[p] = blank()));
+  const perSets = {}; // "index|時段" -> Set(動作編號)
   for (const r of rehab) {
     const i = idx.get(r.date); if (i === undefined) continue;
-    if (r.leg_raise != null) leg[i] = (leg[i] || 0) + Number(r.leg_raise);
-    if (r.standing != null) stand[i] = (stand[i] || 0) + Number(r.standing);
-    if (r.walking != null) walk[i] = (walk[i] || 0) + Number(r.walking);
+    const per = PERIODS.includes(r.period) ? r.period : "其他";
+    const key = i + "|" + per;
+    (perSets[key] = perSets[key] || new Set());
+    for (const k of Object.keys(r.items || {})) perSets[key].add(k);
+  }
+  for (const key in perSets) {
+    const [i, per] = key.split("|");
+    perSeries[per][Number(i)] = perSets[key].size;
   }
   // 血壓 / 血糖：取當日最後一筆（時間最大）
   const sys = blank(), dia = blank(), sugar = blank();
@@ -427,16 +466,10 @@ async function renderCharts() {
   const has = (arr) => arr.some((v) => v != null);
   let html = "";
 
-  if (has(leg) || has(stand)) {
-    html += chartCard("抬腿 / 站立（每日總次數）", "越高越好，慢慢往上加油 💪",
-      buildChart({ type: "bar", labels, series: [
-        { name: "抬腿", color: "#2f6d5f", values: leg },
-        { name: "站立", color: "#7cbcae", values: stand },
-      ]}));
-  }
-  if (has(walk)) {
-    html += chartCard("行走（每日圈數）", "每天多走一點點",
-      buildChart({ type: "bar", labels, series: [{ name: "行走", color: "#e0912f", values: walk }] }));
+  const activePeriods = CHART_PERIODS.filter((p) => has(perSeries[p]));
+  if (activePeriods.length) {
+    html += chartCard("每日完成動作數（依時段）", `上午 / 下午 / 晚上，滿分 ${EX_TOTAL} 項`,
+      buildChart({ type: "bar", labels, series: activePeriods.map((p) => ({ name: p, color: PCOLORS[p], values: perSeries[p] })) }));
   }
   if (has(sys) || has(dia)) {
     html += chartCard("血壓趨勢", "收縮壓（高）／舒張壓（低）",
@@ -459,29 +492,103 @@ async function loadSettings() {
   state.profile = p;
   $("#pName").value = p.name || "";
   $("#pStart").value = p.start_date || "";
-  $("#gLegReps").value = p.goal_leg_raise_reps || "";
-  $("#gLegTimes").value = p.goal_leg_raise_times || "";
-  $("#gStandReps").value = p.goal_standing_reps || "";
-  $("#gStandTimes").value = p.goal_standing_times || "";
-  $("#gWalkLaps").value = p.goal_walking_laps || "";
+  renderExerciseGuide();
 }
 
 async function saveProfile() {
-  const body = {
-    name: $("#pName").value.trim(),
-    start_date: $("#pStart").value,
-    goal_leg_raise_reps: $("#gLegReps").value,
-    goal_leg_raise_times: $("#gLegTimes").value,
-    goal_standing_reps: $("#gStandReps").value,
-    goal_standing_times: $("#gStandTimes").value,
-    goal_walking_laps: $("#gWalkLaps").value,
-  };
+  const body = { name: $("#pName").value.trim(), start_date: $("#pStart").value };
   try {
     state.profile = await API.saveProfile(body);
     updateHeaderName();
     const h = $("#profileSaved"); h.hidden = false; setTimeout(() => (h.hidden = true), 1800);
     toast("已儲存 ✔");
   } catch (e) { toast(e.message); }
+}
+
+/* 設定頁的動作說明清單 */
+function renderExerciseGuide() {
+  const el = $("#exerciseGuide");
+  if (!el) return;
+  el.innerHTML = EXERCISES.map((e) => `
+    <button type="button" class="ex-guide-item" data-info="${e.n}">
+      <span class="ex-guide-n" style="background:${EX_CATS[e.cat]}">${e.n}</span>
+      <span class="ex-guide-name">${esc(e.name)}</span>
+      <span class="ex-guide-cat" style="color:${EX_CATS[e.cat]}">${esc(e.cat)}</span>
+    </button>`).join("");
+}
+
+/* ----------------------------- 復健動作勾選清單 ----------------------------- */
+function renderChecklist() {
+  let html = "";
+  for (const cat of Object.keys(EX_CATS)) {
+    const list = EXERCISES.filter((e) => e.cat === cat);
+    if (!list.length) continue;
+    html += `<div class="ck-cat" style="--cat:${EX_CATS[cat]}">${cat}</div>`;
+    for (const e of list) {
+      const k = String(e.n);
+      const done = k in state.modalItems;
+      const val = done && state.modalItems[k] != null ? state.modalItems[k] : "";
+      html += `
+        <div class="ck-row${done ? " done" : ""}" data-ex="${e.n}" style="--cat:${EX_CATS[cat]}">
+          <button type="button" class="ck-box" data-toggle="${e.n}" aria-label="完成">✓</button>
+          <span class="ck-name" data-toggle="${e.n}">${esc(e.name)}</span>
+          <input class="ck-count" type="number" min="0" inputmode="numeric" data-count="${e.n}" placeholder="${e.unit}" value="${val}">
+          <button type="button" class="ck-info" data-info="${e.n}" aria-label="動作說明">ⓘ</button>
+        </div>`;
+    }
+  }
+  $("#rChecklist").innerHTML = html;
+}
+
+function ckRowState(n) {
+  const row = $(`#rChecklist .ck-row[data-ex="${n}"]`);
+  if (row) row.classList.toggle("done", String(n) in state.modalItems);
+}
+
+function toggleExercise(n) {
+  const k = String(n);
+  if (k in state.modalItems) {
+    delete state.modalItems[k];
+  } else {
+    const inp = $(`#rChecklist [data-count="${n}"]`);
+    const v = inp && inp.value !== "" ? Number(inp.value) : null;
+    state.modalItems[k] = (v != null && isFinite(v)) ? v : null;
+  }
+  ckRowState(n);
+}
+
+function setExerciseCount(n, raw) {
+  const k = String(n);
+  if (raw === "") {
+    if (k in state.modalItems) state.modalItems[k] = null;  // 有勾但清空次數
+  } else {
+    const v = Number(raw);
+    state.modalItems[k] = isFinite(v) ? v : null;           // 填次數 = 自動勾選
+  }
+  ckRowState(n);
+}
+
+function setPeriodSeg(p) {
+  state.modalPeriod = p;
+  $$("#rPeriod button").forEach((b) => b.classList.toggle("is-active", b.dataset.period === p));
+}
+
+/* 動作示範彈窗（GIF + 做法 + 好處） */
+function openExInfo(n) {
+  const e = EX_BY_N[String(n)];
+  if (!e) return;
+  $("#exInfoTitle").textContent = `${e.n}. ${e.name}`;
+  $("#exInfoBody").innerHTML = `
+    <div class="ex-cat-tag" style="background:${EX_CATS[e.cat]}">${esc(e.cat)}</div>
+    <img class="ex-gif" src="${gifUrl(e.n)}" alt="${esc(e.name)} 示範動畫" loading="lazy">
+    <div class="ex-sec"><h4>怎麼做</h4><p>${esc(e.how)}</p></div>
+    <div class="ex-good">好處：${esc(e.good)}</div>`;
+  $("#exInfoModal").hidden = false;
+  document.body.style.overflow = "hidden";
+}
+function closeExInfo() {
+  $("#exInfoModal").hidden = true;
+  if ($("#rehabModal").hidden) document.body.style.overflow = "";  // 若復健表單仍開著，維持鎖定
 }
 
 function updateHeaderName() {
@@ -502,16 +609,17 @@ function openRehabModal(entry) {
   state.editingRehab = entry ? entry.id : null;
   state.modalPhoto = entry ? (entry.photo || null) : null;
   state.modalVoice = entry ? (entry.voice || null) : null;
+  state.modalItems = entry && entry.items ? { ...entry.items } : {};
+  state.modalPeriod = entry && entry.period ? entry.period : autoPeriod();
   $("#rehabModalTitle").textContent = entry ? "編輯復健紀錄" : "新增復健紀錄";
   $("#rehabId").value = entry ? entry.id : "";
   $("#rDate").value = entry ? entry.date : state.today;
   $("#rTime").value = entry ? (entry.time || "") : localTimeStr();
-  $("#rLeg").value = entry && entry.leg_raise != null ? entry.leg_raise : "";
-  $("#rStand").value = entry && entry.standing != null ? entry.standing : "";
-  $("#rWalk").value = entry && entry.walking != null ? entry.walking : "";
   $("#rNotes").value = entry ? (entry.notes || "") : "";
   $("#rPhoto").value = "";
   $("#rehabDelete").hidden = !entry;
+  setPeriodSeg(state.modalPeriod);
+  renderChecklist();
   renderMediaPreview();
   openModal("rehabModal");
 }
@@ -519,10 +627,9 @@ function openRehabModal(entry) {
 async function saveRehab() {
   const body = {
     date: $("#rDate").value || state.today,
+    period: state.modalPeriod,
     time: $("#rTime").value,
-    leg_raise: $("#rLeg").value,
-    standing: $("#rStand").value,
-    walking: $("#rWalk").value,
+    items: state.modalItems,
     notes: $("#rNotes").value.trim(),
     photo: state.modalPhoto,
     voice: state.modalVoice,
@@ -736,8 +843,10 @@ function bindEvents() {
     else openVitalsModal(null);
   }));
 
-  // 點擊紀錄卡 → 編輯
+  // 點擊「動作說明」(ⓘ) → 開示範彈窗（清單與設定頁共用）
   document.addEventListener("click", async (e) => {
+    const info = e.target.closest("[data-info]");
+    if (info) { openExInfo(info.dataset.info); return; }
     const rc = e.target.closest("[data-edit-rehab]");
     if (rc) {
       try {
@@ -761,6 +870,23 @@ function bindEvents() {
   $$("[data-close]").forEach((b) => b.addEventListener("click", () => {
     closeModal("rehabModal"); closeModal("vitalsModal");
   }));
+  $$("[data-close-ex]").forEach((b) => b.addEventListener("click", closeExInfo));
+
+  // 復健表單：時段選擇
+  $("#rPeriod").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-period]");
+    if (b) setPeriodSeg(b.dataset.period);
+  });
+
+  // 復健表單：動作打勾 / 填次數
+  $("#rChecklist").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-toggle]");
+    if (t) toggleExercise(t.dataset.toggle);
+  });
+  $("#rChecklist").addEventListener("input", (e) => {
+    const c = e.target.closest("[data-count]");
+    if (c) setExerciseCount(c.dataset.count, c.value);
+  });
 
   // 儲存 / 刪除
   $("#rehabSave").addEventListener("click", saveRehab);
