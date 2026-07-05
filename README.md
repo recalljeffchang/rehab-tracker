@@ -21,9 +21,9 @@
 
 ## 技術
 
-- 後端：Python **Flask** + **SQLite**
+- 後端：Python **Flask**；資料庫可用 **SQLite**（本機開發）或 **PostgreSQL**（線上，透過 `DATABASE_URL`）
 - 前端：原生 HTML / CSS / JavaScript（圖表用純 SVG 繪製，無外部相依）
-- 部署：**Render**（gunicorn），資料放在 Render 的 persistent disk
+- 部署：**Render 免費方案** web 服務 + **Neon 免費 PostgreSQL**（資料永久保存）
 
 ---
 
@@ -42,35 +42,31 @@ python3 -m venv .venv
 
 ---
 
-## 部署到 Render（和 tainan 一樣的流程）
+## 部署到 Render（免費方案 + Neon 免費資料庫）
 
-### 1. 放上 GitHub
+> 為什麼要 Neon？Render 免費 web 服務的磁碟是**暫時的**，服務休眠 / 重啟就會清空，
+> 所以資料庫不能放在上面。把資料放在免費的 **Neon PostgreSQL**（永久保存）即可解決。
 
-```bash
-cd rehab-tracker
-git init
-git add .
-git commit -m "復健紀錄手冊 初版"
-# 到 GitHub 建一個新的 repo，然後：
-git remote add origin https://github.com/<你的帳號>/<repo 名稱>.git
-git branch -M main
-git push -u origin main
-```
+### 1. 建立免費 Neon 資料庫
+
+1. 到 [neon.tech](https://neon.tech) 註冊（可用 Google / GitHub 登入）。
+2. 建立一個 Project（名稱隨意，例如 `rehab-tracker`；區域選離台灣近的，如 Singapore）。
+3. 建好後複製它給的**連線字串（Connection string）**，長得像：
+   `postgresql://使用者:密碼@ep-xxxx-pooler.ap-southeast-1.aws.neon.tech/dbname?sslmode=require`
+   （若有「Pooled connection」選項就選它。）**這串等一下要貼到 Render，請勿放進 GitHub。**
 
 ### 2. 在 Render 建立服務
 
-1. 登入 [Render](https://dashboard.render.com/) → **New +** → **Blueprint**。
-2. 選剛剛的 GitHub repo。Render 會自動讀取 `render.yaml`。
-3. 按 **Apply** 開始部署，等幾分鐘就會有一個網址（例如 `https://rehab-tracker.onrender.com`）。
+1. 登入 [Render](https://dashboard.render.com/blueprints) → **New Blueprint Instance**。
+2. 選 GitHub repo **rehab-tracker**（第一次會請你授權 Render 的 GitHub App）。Render 會自動讀取 `render.yaml`。
+3. 系統會請你填 `DATABASE_URL` → 貼上剛剛 Neon 的連線字串。
+4. 按 **Apply** / **Deploy**，等幾分鐘就會有一個網址（例如 `https://rehab-tracker.onrender.com`）。
 
-`render.yaml` 已經設定好：
-- 用 `gunicorn` 啟動
-- 掛載一顆 1GB 的 persistent disk 到 `/var/data`，**資料庫與照片語音都存在這裡，重啟不會不見**
-- 自動產生 `SECRET_KEY`
+`render.yaml` 已設定好：`plan: free`、`gunicorn` 啟動、自動產生 `SECRET_KEY`、
+`DATABASE_URL` 由你在後台填入。
 
-> ⚠️ **關於資料保存**：persistent disk 需要付費方案（Render Starter，約 US$7/月）。
-> 若想用**免費方案**：把 `render.yaml` 裡的 `disk:` 整段刪掉、`plan` 改成 `free`。
-> 但免費方案的磁碟是**暫時的**，服務重啟後資料會消失，請務必**常常到「設定 → 下載備份」** 保存。
+> 免費方案的小提醒：閒置 15 分鐘會休眠，下次開啟需約 1 分鐘喚醒（**資料存在 Neon，不會遺失**）。
+> Neon 免費約 0.5GB，主要放文字紀錄很夠用；若照片 / 語音很多可能要留意容量。
 
 ### 3.（強烈建議）設定密碼
 
@@ -101,7 +97,8 @@ git push -u origin main
 
 | 變數 | 說明 | 預設 |
 |------|------|------|
-| `DATA_DIR` | 資料庫與上傳檔案存放位置 | `./data` |
+| `DATABASE_URL` | PostgreSQL 連線字串（Neon）。**有設定就用 PostgreSQL；沒設定就用本機 SQLite** | 未設定（用 SQLite） |
+| `DATA_DIR` | SQLite 資料庫與暫存檔位置（用 PostgreSQL 時僅存還原前的安全快照） | `./data` |
 | `SECRET_KEY` | 登入 cookie 簽章用；**未設定時每次啟動用隨機值**（登入會在重啟後失效，但不會有安全漏洞）。正式部署請設定固定值 | 隨機 |
 | `APP_PASSWORD` | 設定後啟用密碼保護 | 未設定（開放使用） |
 | `COOKIE_INSECURE` | 設為 `1` 時關閉 cookie 的 Secure 旗標，**只在本機用 http 測試登入時才需要**（正式 HTTPS 環境請勿設定） | 未設定 |
