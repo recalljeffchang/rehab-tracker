@@ -756,11 +756,15 @@ async function renderCharts() {
       buildChart({ type: "bar", labels, series: activePeriods.map((p) => ({ name: p, color: PCOLORS[p], values: perSeries[p] })) }));
   }
   if (has(sys) || has(dia)) {
-    html += chartCard("血壓趨勢", "收縮壓（高）／舒張壓（低）",
+    // 警戒線：收縮壓 140、舒張壓 90（高血壓參考；顏色對齊各線，僅在有資料時顯示）
+    const bpRef = [];
+    if (has(sys)) bpRef.push({ value: 140, color: "#c0483b", label: "收縮壓 140" });
+    if (has(dia)) bpRef.push({ value: 90, color: "#e0912f", label: "舒張壓 90" });
+    html += chartCard("血壓趨勢", "收縮壓（高）／舒張壓（低）· 虛線為警戒值",
       buildChart({ type: "line", labels, series: [
         { name: "收縮壓", color: "#c0483b", values: sys },
         { name: "舒張壓", color: "#e0912f", values: dia },
-      ]}));
+      ], refLines: bpRef }));
   }
   const sugarSeries = SUGAR_CTX.filter((c) => has(sugarByCtx[c.key]))
     .map((c) => ({ name: c.key, color: c.color, values: sugarByCtx[c.key] }));
